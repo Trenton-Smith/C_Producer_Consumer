@@ -94,8 +94,6 @@ void *producer_Thread(void* arg)
     struct thread_info* tinfo = (struct thread_info*)arg;
     //printf("Producer ID: %3d\n\n", tinfo->readable_id);
     for(int i = 0; i < X; i++) {
-        if(buffer_Position >= N || buffer_Position > C){
-            sem_post(&delete);
             sem_wait(&add);
             pthread_mutex_lock(&thread_lock);
             put_item(item);
@@ -104,15 +102,6 @@ void *producer_Thread(void* arg)
             pthread_mutex_unlock(&thread_lock);
             sem_post(&delete);
             sleep(Ptime);
-        }else {
-            pthread_mutex_lock(&thread_lock);
-            put_item(item);
-            printf("%d\twas produced by Producer -->\t%d\n", item, tinfo->readable_id);
-            item++;
-            pthread_mutex_unlock(&thread_lock);
-            sem_post(&delete);
-            sleep(Ptime);
-        }
     }
     pthread_exit(0);
 }
@@ -124,8 +113,12 @@ void *consumer_Thread(void* arg)
     for(int i = 0; i < tinfo->consumer_num; i++) {
         sem_wait(&delete);
         pthread_mutex_lock(&thread_lock);
-        int returnValue = grab_item();
-        printf("%d\twas consumed by Consumer -->\t%d\n", returnValue, tinfo->readable_id);
+        if(buffer[buffer_Position-1]==0){
+            i--;
+        }else {
+            int returnValue = grab_item();
+            printf("%d\twas consumed by Consumer -->\t%d\n", returnValue, tinfo->readable_id);
+        }
         pthread_mutex_unlock(&thread_lock);
         sem_post(&add);
         sleep(Ctime);
@@ -164,6 +157,10 @@ int main(int argc, char* argv[])
     time_t seconds;
     long nano_seconds;
     int arraySize; //used to determine length of Producer/Consumer arrays for testing
+
+    int value = 1;
+    sem_init(&add,0,value);
+    sem_init(&delete,0,value);
 
     /**
      * exit if incorrect number of args
@@ -215,6 +212,7 @@ int main(int argc, char* argv[])
         spawn all threads
     */
     int total_Threads = P + C;
+    int scraps = 1;
     struct thread_info tinfo[total_Threads];
     if(LEFTOVER_FLAG){
         printf("Over-consume is: ON\n"
@@ -231,11 +229,18 @@ int main(int argc, char* argv[])
             tinfo[i].type = "Producer";
             pthread_create(&tinfo[i].tid, NULL, producer_Thread, (void *) &tinfo[i]);
         }else{
+            printf("***CREATED CONSUMER***\n");
             tinfo[i].readable_id = j + 1;
             tinfo[i].type = "Consumer";
             tinfo[i].consumer_num = number_to_Consume;
-            if(LEFTOVER_FLAG && i == P){
-                tinfo[i].consumer_num = number_to_Consume + leftover;
+//            if(LEFTOVER_FLAG && i == P){
+//                tinfo[i].consumer_num = number_to_Consume + leftover;
+//            }
+            if(LEFTOVER_FLAG && i >= P){
+                if(scraps <= leftover) {
+                    tinfo[i].consumer_num = number_to_Consume + 1;
+                    scraps++;
+                }
             }
             pthread_create(&tinfo[i].tid, NULL, consumer_Thread, (void *) &tinfo[i]);
             j++;

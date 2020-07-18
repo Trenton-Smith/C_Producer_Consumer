@@ -1,1 +1,90 @@
-pseudo goes here
+/**
+Description of semaphore & mutex logic for Producer/Consumer threads:
+    The buffer is initialized with size N. Upon creating the threads, each will attempt to run their individual
+    functions. Due to each thread attempting to run at the same time, semaphores and mutexes will be used in order to
+    synchronize their interactions with the buffer.
+    Initially, the Producer threads will be allowed to run, with N being allowed at any one time. Each will lock the
+    mutex, blocking outside access; run its commands; then unlock the mutex, allowing outside access. Subsequent Producer
+    threads will have to wait until being signaled by a Consumer thread. At the end of each Producer thread function,
+    the Producer will signal a Consumer thread to run.
+    In the Consumer threads, they will first be waiting on a Producer thread to signal them to run. After being signaled,
+    they will lock and unlock the mutex for their critical section just like the Producer threads, and after finishing
+    their tasks, will signal a waiting Producer thread to run.
+    In this fashion, two semaphores will be used to wait and signal Producer and Consumer threads in a back and forth
+    manner, ensuring that Consumer threads will not take from the buffer without first being signaled by a Producer which
+    has already placed an item in the buffer to be taken.
+    The mutex will be locked and unlocked for each and every Producer and Consumer thread, ensuring that only one thread
+    can have access to the buffer at any one time.
+**/
+
+Producer Thread:
+    for: each item to be produced
+        sem_wait(consumer_can_unlock) //allow to proceed until reaching number of buffers - then wait for wait for...
+                                      //...consumers to unlock
+        lock mutex //enter critical section and block outside access
+            run put_item(item) //put item into buffer
+            print information to user
+            increment item //or use random numbers for item
+            update position of buffers //increment or circle to beginning
+        unlock mutex //leave critical section and allow outside access
+        sem_post(consumer_unlocked) //allow consumer threads to proceed
+        sleep //amount specified in command arguments
+    exit thread
+
+Consumer Thread:
+    for: each item to be consumed
+        sem_wait(producer_can_unlock) //wait for producer to unlock
+        lock mutex //enter critical section and block outside access
+            run grab_item() and place return value into consumer array //pulls item from buffer
+            print information to user
+            increment consumer array position
+            update position of buffers //increment or circle to beginning
+        unlock mutex //leave critical section and allow outside access
+        sem_post(producer_unlocked) //allow producer threads to proceed
+        sleep //amount specified in command arguments
+    exit thread
+
+/**
+Description of buffer, put_item(), and grab_item():
+    The buffer will be initialized with a value of N size. Each individual Producer and Consumer thread will be granted
+    access to the buffer through the use of semaphores and mutex locks (described above). Once in their critical sections,
+    Producer threads will call put_item(), and Consumer threads will call grab_item().
+    put_Item() will place a value into the buffer at whichever position is being pointed to by an index counter unique
+    to Producer threads.
+    grab_Item() will take a value from the buffer at whichever position is being pointed to by an index counter unique
+    to Consumer threads, and return it to the calling Consumer thread.
+    Because both functions are locked behind semaphores and a mutex lock, only one thread will have access to the buffer
+    at one time, effectively synchronizing the threads' actions.
+**/
+
+put_Item():
+    place value into buffer
+    place value into producer array for testing
+    increment producer array index position
+    update producer sum for testing
+
+grab_Item():
+    pull value from buffer
+    update consumer sum for testing
+    return value from buffer
+
+/**
+Description of Testing Strategy:
+    In order to test the synchronization of the Producer and Consumer thread interactions with the buffer, we'll implement
+    two arrays, one for Producers and one for Consumers, and also two running summations, again one for each type of
+    thread.
+    With the Producer array, each time we enter a Producer's critical section and call put_item(), the value we place
+    into the buffer will also be placed in the Producer array. This way, we will keep track of each specific value being
+    entered into the buffer throughout the runtime of the program.
+    With the Consumer array, each time we enter a Consumer's critical section, we will update the value at a specified
+    Consumer array index position by initializing it to grab_item(), therein returning the same value being returned from
+    the buffer.
+    After all the threads have completed their individual tasks, we will then sort the Consumer array (Producer array need
+    not be sorted as it already is), and compare the two. If each value at each index position matches between the arrays,
+    then we know the threads all behaved correctly and interacted with the buffer in a synchronized fashion.
+    With the summations, we simply keep a running tally for each value either entered into the buffer by a Producer
+    thread, or taken from the buffer by a Consumer thread. Then, again at the conclusion of each threads' tasks, we simply
+    compare each total; if they match, we're good, if not, an error happened. The summation is mainly used as a backup
+    for the arrays test, seeing as how it would be difficult to check arrays of large quantities if wanting to do it by
+    hand to ensure accuracy.
+**/

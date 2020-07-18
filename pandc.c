@@ -10,7 +10,7 @@
 #include <sys/stat.h>
 #include <stdbool.h>
 
-
+/**Program Arguments**/
 int N; //number of buffers
 int P; //number of producers
 int C; //number of consumers
@@ -18,90 +18,81 @@ int X; //number of items each producer thread will create
 int Ptime; //(seconds) sleep time for producers after item creation
 int Ctime; //(seconds) sleep time for consumers after item consumption
 
+/**Shared Resources**/
 int* buffer; //functions as shared resource between Producer and Consumer threads
-int buffer_Position = 0; //to be modified by each Producer and entered into the Buffer
-int* producer_Array;
-int* consumer_Array;
-int consumer_Array_Position = 0;
-int producer_Array_Position = 0;
-int number_to_Consume;
-int item = 1;
-int producer_sum = 0;
-int consumer_sum = 0;
-bool arrays_Matching = true;
+pthread_mutex_t thread_lock = PTHREAD_MUTEX_INITIALIZER; //lock before critical section (after sem_wait() ), unlock after (before sem_post() )
+sem_t add; //binary semaphore: initialize to 1 ; wait() in Producer thread ; post() in Consumer thread
+sem_t delete; //binary semaphore: initialize to 0 ; wait() in Consumer thread ; post() in Producer thread
 
-//sem_t sem;
-//sem_init(&s->sem,0,value); //initialize semaphore
-//sem_wait(&s->sem);         //lock semaphore
-//sem_post(&s->sem);         //unlock semaphore
-//sem_destroy(&s->sem);
+/**Non-Shared Resources**/
+int* producer_Array; //used for testing values entered by put_item()
+int* consumer_Array; //used for testing values taken by grab_item()
+int producer_Array_Position = 0; //index position for producer_Array[n]
+int consumer_Array_Position = 0; //index position for consumer_Array[n]
+bool arrays_Matching = true; //if producer_Array and consumer_Array do not match at end of populations, set to false
+int producer_sum = 0; //secondary testing method
+int consumer_sum = 0; //secondary testing method
+int in_index = 0; //index position for buffer[n] used for Producer threads
+int out_index = 0; //index position for buffer[n] used for Consumer threads
+int number_to_Consume; // (P*X) / C *Note* rounds down e.g. (5*4) / 3 = 6
+int item = 1; //incremented each time a Producer thread runs its critical section
 
-//pthread_create
-//pthread_join
-//pthread_exit
-//pthread_t
-//pthread_mutex_lock
-//pthread_mutex_unlock
-//PTHREAD_MUTEX_INITIALIZER
-pthread_mutex_t thread_lock = PTHREAD_MUTEX_INITIALIZER;
-sem_t add;
-sem_t delete;
-
+/**Thread Information**/
 struct thread_info{
-    pthread_t tid;
-    int readable_id;
-    char* type;
-    int consumer_num;
+    pthread_t tid; //print readable_id instead for easy identification in testing
+    int readable_id; //numeric 1 -> n
+    char* type; //Producer or Consumer
+    int consumer_num; //left unused for Producers, Consumers update the value depending on number_to_Consume and if leftovers is initialized
 };
 
 /**
- * for the 2 functions below, look
- * at the process slides/video for
- * sample code that can be used.
- */
-/*
- * Function to remove item.
- * Item removed is returned
+ * Function to remove item from shared buffer.
+ * Item removed is returned to Consumer thread.
+ * Updates running consumer_sum for testing.
  */
 int grab_item()
 {
-//    sem_wait(&delete);//must wait till given permission to delete
     int returnValue;
-    buffer_Position--;
-    returnValue = buffer[buffer_Position];
-    consumer_Array[consumer_Array_Position] = returnValue;
-    consumer_Array_Position++;
+    returnValue = buffer[out_index];
     consumer_sum = consumer_sum + returnValue;
     return returnValue;
 }
 
-/*
- * function to put item
- * into shared resource
- * so it can be consumed
+/**
+ * Function to put item into shared buffer.
+ * Also puts item into producer_Array for testing.
+ * Updates running producer_sum for testing.
  */
 void put_item(int new_item)
 {
-    producer_sum = producer_sum + new_item;
-    buffer[buffer_Position] = new_item;
+    buffer[in_index] = new_item;
     producer_Array[producer_Array_Position] = new_item;
-    buffer_Position++;
     producer_Array_Position++;
+    producer_sum = producer_sum + new_item;
 }
 
+/**
+ * Producer Thread
+ * Waits for add, then locks critical section (add initially set to 1 for access)
+ * In critical section: runs put_item(), prints actions, increments item, updates index position, exits critical section
+ * Unlocks critical section, posts for delete (allowing Consumer threads to run)
+ * Sleeps for Ptime
+ * Exits
+ */
 void *producer_Thread(void* arg)
 {
     struct thread_info* tinfo = (struct thread_info*)arg;
     //printf("Producer ID: %3d\n\n", tinfo->readable_id);
     for(int i = 0; i < X; i++) {
-            sem_wait(&add);
-            pthread_mutex_lock(&thread_lock);
-            put_item(item);
-            printf("%d\twas produced by Producer -->\t%d\n", item, tinfo->readable_id);
-            item++;
-            pthread_mutex_unlock(&thread_lock);
-            sem_post(&delete);
-            sleep(Ptime);
+        sem_wait(&add);
+        pthread_mutex_lock(&thread_lock);
+        put_item(item);
+        printf("%d\twas produced by Producer -->\t%d\n", item, tinfo->readable_id);
+        item++;
+        in_index = (in_index + 1) % N;
+        pthread_mutex_unlock(&thread_lock);
+        sem_post(&delete);
+        sleep(Ptime);
     }
     pthread_exit(0);
 }
@@ -113,12 +104,10 @@ void *consumer_Thread(void* arg)
     for(int i = 0; i < tinfo->consumer_num; i++) {
         sem_wait(&delete);
         pthread_mutex_lock(&thread_lock);
-        if(buffer[buffer_Position-1]==0){
-            i--;
-        }else {
-            int returnValue = grab_item();
-            printf("%d\twas consumed by Consumer -->\t%d\n", returnValue, tinfo->readable_id);
-        }
+        consumer_Array[consumer_Array_Position] = grab_item();
+        printf("%d\twas consumed by Consumer -->\t%d\n", consumer_Array[consumer_Array_Position], tinfo->readable_id);
+        consumer_Array_Position++;
+        out_index = (out_index + 1) % N;
         pthread_mutex_unlock(&thread_lock);
         sem_post(&add);
         sleep(Ctime);
@@ -158,12 +147,8 @@ int main(int argc, char* argv[])
     long nano_seconds;
     int arraySize; //used to determine length of Producer/Consumer arrays for testing
 
-    int value = 1;
-    sem_init(&add,0,value);
-    sem_init(&delete,0,value);
-
     /**
-     * exit if incorrect number of args
+     * Exit if incorrect number of args
      */
     if(argc != 7){
         printf("This program must be ran with the format: ./pandc N P C X Ptime Ctime \n"
@@ -192,6 +177,9 @@ int main(int argc, char* argv[])
     if(leftover > 0) {
         LEFTOVER_FLAG = 1;
     }
+
+    sem_init(&delete,0,0);
+    sem_init(&add, 0, N);
 
     printf("Number of Buffers: %d\n"
            "Number of Producers: %d\n"

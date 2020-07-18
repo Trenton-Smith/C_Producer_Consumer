@@ -198,6 +198,11 @@ int main(int argc, char* argv[])
     producer_Array = calloc(arraySize,sizeof(int)); //size of P*X ints
     consumer_Array = calloc(arraySize,sizeof(int)); //size of P*X ints
 
+    /**Get and print current time**/
+    time_t now1;
+    time(&now1);
+    printf("Current time: %s\n\n",ctime(&now1));
+
     printf("Number of Buffers: %d\n"
            "Number of Producers: %d\n"
            "Number of Consumers: %d\n"
@@ -255,9 +260,9 @@ int main(int argc, char* argv[])
     clock_gettime(CLOCK_REALTIME, &end_time); //records ending time
 
     /**Get and print current time**/
-    time_t now;
-    time(&now);
-    printf("Current time: %s\n",ctime(&now));
+    time_t now2;
+    time(&now2);
+    printf("Current time: %s\n",ctime(&now2));
 
     /**
      * Calculates total runtime not including testing Producer and Consumer arrays

@@ -2,8 +2,6 @@
 
 ## Student Name : Trenton Smith
 
-## Student ID : 920056368
-
 ## Build Instructions
 
 1. Download the repo
